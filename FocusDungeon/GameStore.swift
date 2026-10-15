@@ -1,0 +1,189 @@
+import DungeonCore
+import Foundation
+import Observation
+import SwiftUI
+import UserNotifications
+
+/// Owns the hero and the running session, persists both, and watches whether
+/// the user leaves the app mid-session.
+@Observable
+final class GameStore {
+    private(set) var hero: Hero
+    private(set) var session: FocusSession?
+    /// Precomputed from the hero at session start; revealed minute by minute.
+    private(set) var run: DungeonRun?
+    /// Set when a session ends; cleared once the user has read it.
+    private(set) var report: AdventureReport?
+
+    @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    @ObservationIgnored private var lockObserver: NSObjectProtocol?
+    @ObservationIgnored private let liveActivity = LiveActivityController()
+
+    private struct SaveGame: Codable {
+        var hero: Hero
+        var session: FocusSession?
+    }
+
+    private static let saveURL = URL.applicationSupportDirectory.appending(path: "savegame.json")
+    private static let endNotificationID = "session-end"
+
+    init() {
+        let save = (try? Data(contentsOf: Self.saveURL)).flatMap { try? JSONDecoder().decode(SaveGame.self, from: $0) }
+        hero = save?.hero ?? Hero(name: "Ari")
+        session = save?.session
+        if let session {
+            run = Adventure.run(for: session, hero: hero)
+        } else {
+            liveActivity.endAll()
+        }
+
+        // With a passcode, protected data becomes unavailable shortly after the screen locks.
+        // That tells a locked phone apart from switching to another app.
+        lockObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.screenDidLock() }
+        }
+
+        // The app may have been killed while away or while the session ran out.
+        appDidReturn()
+    }
+
+    // MARK: Session lifecycle
+
+    func startSession(category: FocusCategory, minutes: Int) {
+        guard session == nil else { return }
+        let newSession = FocusSession(category: category, plannedMinutes: minutes)
+        session = newSession
+        run = Adventure.run(for: newSession, hero: hero)
+        save()
+        scheduleEndNotification(at: newSession.plannedEndDate)
+        liveActivity.start(session: newSession, hero: hero)
+    }
+
+    /// Called every second while the dungeon is on screen.
+    func tick(at now: Date = .now) {
+        guard var current = session else { return }
+        current.update(at: now)
+        session = current
+        if current.state != .running {
+            finish(at: now)
+        } else {
+            liveActivity.update(latest: run?.events(upToMinute: current.focusedMinutes(at: now)).last, session: current)
+        }
+    }
+
+    func flee() {
+        guard var current = session else { return }
+        current.abandon()
+        session = current
+        finish(at: .now)
+    }
+
+    func dismissReport() {
+        report = nil
+    }
+
+    private func finish(at now: Date) {
+        guard let current = session else { return }
+        let report = Adventure.finish(current, hero: &hero, at: now)
+        self.report = report
+        liveActivity.end(with: report)
+        session = nil
+        run = nil
+        save()
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.endNotificationID])
+    }
+
+    // MARK: Hero
+
+    func rename(to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        hero.name = String(trimmed.prefix(20))
+        save()
+    }
+
+    /// Gear is locked during a session, since the run was simulated with the old gear.
+    func equip(_ item: Item) {
+        guard session == nil else { return }
+        hero.equip(item)
+        save()
+    }
+
+    // MARK: Leaving the app
+
+    func scenePhaseChanged(to phase: ScenePhase) {
+        switch phase {
+        case .background: appDidLeave()
+        case .active: appDidReturn()
+        // Inactive covers Control Center and incoming calls, which are fine.
+        default: break
+        }
+    }
+
+    private func appDidLeave() {
+        guard session?.state == .running else { return }
+        session?.appDidLeave()
+        save()
+        // Don't promise success while it's unclear whether the user is coming back.
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.endNotificationID])
+        // Stay awake briefly so the screen-lock notification can still reach us.
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "lock-detection") { [weak self] in
+            self?.endBackgroundTask()
+        }
+    }
+
+    private func appDidReturn() {
+        endBackgroundTask()
+        guard session != nil else { return }
+        session?.appDidReturn()
+        tick()
+        save()
+        if let session, session.state == .running {
+            scheduleEndNotification(at: session.plannedEndDate)
+        }
+    }
+
+    private func screenDidLock() {
+        guard session != nil else { return }
+        // On a real device the lock is reported about ten seconds late.
+        session?.screenDidLock(detectionDelay: 10)
+        tick()
+        save()
+        if let session, session.state == .running {
+            scheduleEndNotification(at: session.plannedEndDate)
+        }
+        endBackgroundTask()
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
+
+    // MARK: Persistence & notifications
+
+    private func save() {
+        do {
+            try FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
+            try JSONEncoder().encode(SaveGame(hero: hero, session: session)).write(to: Self.saveURL, options: .atomic)
+        } catch {
+            print("Spielstand konnte nicht gespeichert werden: \(error)")
+        }
+    }
+
+    private func scheduleEndNotification(at date: Date) {
+        let center = UNUserNotificationCenter.current()
+        Task {
+            guard (try? await center.requestAuthorization(options: [.alert, .sound])) == true else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Abenteuer bestanden! ⚔️"
+            content.body = "Dein Held ist zurück. Der Abenteuerbericht wartet in der Taverne."
+            content.sound = .default
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: max(1, date.timeIntervalSinceNow), repeats: false)
+            try? await center.add(UNNotificationRequest(identifier: Self.endNotificationID, content: content, trigger: trigger))
+        }
+    }
+}
