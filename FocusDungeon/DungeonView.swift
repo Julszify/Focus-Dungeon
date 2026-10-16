@@ -6,10 +6,46 @@ struct AdventureFlowView: View {
     @Environment(GameStore.self) private var store
 
     var body: some View {
-        if let report = store.report {
+        if let finale = store.finale {
+            FinaleView(finale: finale)
+        } else if let report = store.report {
             ReportView(report: report)
         } else {
             DungeonView()
+        }
+    }
+}
+
+/// The final room after time is up; it hands over to the report by itself.
+private struct FinaleView: View {
+    @Environment(GameStore.self) private var store
+    let finale: GameStore.Finale
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("🏁 Ein letzter Raum …")
+                .font(Theme.title(18))
+                .padding(.top, 40)
+            DungeonScene(session: finale.session, events: finale.events, heroClass: finale.heroClass,
+                         startHP: finale.startHP, clock: .continuing)
+                .frame(height: 250)
+            if let last = finale.events.last {
+                HStack(alignment: .top, spacing: 10) {
+                    Text(last.kind.icon)
+                    Text(last.text)
+                }
+                .font(.callout.weight(.semibold))
+            }
+            Spacer()
+            Button("Zum Abenteuerbericht") { store.endFinale() }
+                .buttonStyle(.bordered)
+                .tint(.secondary)
+        }
+        .padding()
+        .background(Theme.background)
+        .task {
+            try? await Task.sleep(for: .seconds(max(0, finale.until.timeIntervalSinceNow)))
+            store.endFinale()
         }
     }
 }
@@ -52,8 +88,8 @@ struct DungeonView: View {
         VStack(spacing: 20) {
             header(session: session, floor: floor, now: now)
 
-            RoomStage(heroClass: hero.heroClass, event: latest, elapsed: elapsed, now: now)
-                .frame(height: 240)
+            DungeonScene(session: session, events: events, heroClass: hero.heroClass, startHP: hero.maxHP)
+                .frame(height: 250)
 
             VStack(spacing: 6) {
                 HStack {
@@ -112,81 +148,5 @@ struct DungeonView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(.spring(duration: 0.4), value: events.count)
-    }
-}
-
-/// The hero on the left and whatever the current room holds on the right. Each new room
-/// plays out once: the monster jumps in, then falls over (or the hero does, on a knockout).
-private struct RoomStage: View {
-    let heroClass: HeroClass
-    let event: DungeonEvent?
-    let elapsed: Int
-    let now: Date
-    @State private var settledEventID: Int?
-
-    private var settled: Bool { event != nil && settledEventID == event?.id }
-    private var heroKnockedOut: Bool { settled && event?.kind == .knockout }
-    private var monsterDefeated: Bool { settled && (event?.kind == .fight || event?.kind == .bossFight) }
-
-    var body: some View {
-        ZStack {
-            Torchlight(now: now)
-            HStack(alignment: .bottom, spacing: 28) {
-                PixelHero(heroClass: heroClass, pixelSize: 8)
-                    // Steps along one pixel per second.
-                    .offset(y: elapsed.isMultiple(of: 2) || heroKnockedOut ? 0 : -4)
-                    .animation(.easeInOut(duration: 0.25), value: elapsed)
-                    .rotationEffect(.degrees(heroKnockedOut ? -90 : 0), anchor: .bottom)
-                    .opacity(heroKnockedOut ? 0.6 : 1)
-                    .overlay(alignment: .top) {
-                        if heroKnockedOut { Text("💫").font(.title).offset(y: -20) }
-                    }
-                encounter
-            }
-        }
-        .animation(.spring(duration: 0.45, bounce: 0.35), value: event?.id)
-        .animation(.spring(duration: 0.5), value: settled)
-        .task(id: event?.id) {
-            settledEventID = nil
-            try? await Task.sleep(for: .seconds(1.2))
-            settledEventID = event?.id
-        }
-    }
-
-    @ViewBuilder
-    private var encounter: some View {
-        if let event, event.kind != .descend {
-            Group {
-                if let monster = event.monster {
-                    PixelMonster(name: monster, pixelSize: 8)
-                        .rotationEffect(.degrees(monsterDefeated ? 90 : 0), anchor: .bottom)
-                        .opacity(monsterDefeated ? 0.35 : 1)
-                        .overlay(alignment: .top) {
-                            if monsterDefeated { Text("💥").font(.title).offset(y: -24) }
-                        }
-                } else {
-                    Text(event.kind.icon)
-                        .font(.system(size: 60))
-                        .scaleEffect(settled ? 1 : 1.2)
-                }
-            }
-            .id(event.id)
-            .transition(.scale(scale: 0.4).combined(with: .opacity))
-        }
-    }
-}
-
-/// Flickering warm glow behind the hero.
-private struct Torchlight: View {
-    let now: Date
-
-    var body: some View {
-        let flicker = 0.8 + 0.2 * sin(now.timeIntervalSince1970 * 7)
-        RadialGradient(
-            colors: [Theme.torch.opacity(0.45 * flicker), Theme.torch.opacity(0.08), .clear],
-            // Fades out before the frame edge so the glow is never cut off.
-            center: .center, startRadius: 10, endRadius: 115
-        )
-        .animation(.easeInOut(duration: 1), value: flicker)
     }
 }

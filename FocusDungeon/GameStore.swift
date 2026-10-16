@@ -16,6 +16,16 @@ final class GameStore {
     private(set) var report: AdventureReport?
     /// Every finished session, for the hero's chronicle.
     private(set) var history: [SessionRecord] = []
+    /// The last room of a completed session still playing out before the report.
+    private(set) var finale: Finale?
+
+    struct Finale {
+        let session: FocusSession
+        let events: [DungeonEvent]
+        let heroClass: HeroClass
+        let startHP: Int
+        let until: Date
+    }
 
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var lockObserver: NSObjectProtocol?
@@ -89,11 +99,26 @@ final class GameStore {
 
     func dismissReport() {
         report = nil
+        finale = nil
         save()
+    }
+
+    func endFinale() {
+        finale = nil
     }
 
     private func finish(at now: Date) {
         guard let current = session else { return }
+        // Rewards are settled right away; only the screen waits for the final scene.
+        // The last room starts exactly at the end, so without this the boss fight would never be seen.
+        if current.state == .completed, let run, let last = run.events.last(where: { $0.kind != .descend }),
+           last.minute == current.plannedMinutes {
+            let until = current.plannedEndDate.addingTimeInterval(DungeonScene.pause(for: last.kind) + 0.8)
+            if until > now {
+                finale = Finale(session: current, events: run.events, heroClass: hero.heroClass,
+                                startHP: hero.maxHP, until: until)
+            }
+        }
         let report = Adventure.finish(current, hero: &hero, at: now)
         self.report = report
         history.append(SessionRecord(report: report, date: current.startDate))

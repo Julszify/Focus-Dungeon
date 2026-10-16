@@ -7,9 +7,19 @@ struct FocusDungeonApp: App {
 
     var body: some Scene {
         WindowGroup {
-            TavernView()
-                .environment(store)
-                .preferredColorScheme(.dark)
+            Group {
+                #if DEBUG
+                if SceneDemoView.isEnabled {
+                    SceneDemoView()
+                } else {
+                    TavernView()
+                }
+                #else
+                TavernView()
+                #endif
+            }
+            .environment(store)
+            .preferredColorScheme(.dark)
         }
         .onChange(of: scenePhase) { _, phase in
             store.scenePhaseChanged(to: phase)

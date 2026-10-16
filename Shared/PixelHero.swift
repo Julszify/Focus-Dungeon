@@ -5,6 +5,8 @@ import SwiftUI
 struct PixelHero: View {
     let heroClass: HeroClass
     var pixelSize: CGFloat = 8
+    /// Walk cycle frame: even = legs apart, odd = legs together.
+    var step = 0
 
     // H hat/hood · S skin · E eyes · B tunic · b tunic shade · A arms · L legs · F boots · W weapon
     private static let grid = [
@@ -20,8 +22,11 @@ struct PixelHero: View {
         ".ABBbbBBAAA...",
         "..BBBBBB......",
         "..bbbbbb......",
-        "..LL..LL......",
-        "..FF..FF......",
+    ]
+
+    private static let legs = [
+        ["..LL..LL......", "..FF..FF......"],
+        ["...LLLL.......", "...FFFF......."],
     ]
 
     private var weaponColor: Color {
@@ -47,7 +52,7 @@ struct PixelHero: View {
     }
 
     var body: some View {
-        PixelSprite(grid: Self.grid, palette: palette, pixelSize: pixelSize)
+        PixelSprite(grid: Self.grid + Self.legs[step % 2], palette: palette, pixelSize: pixelSize)
             .accessibilityLabel("Pixel-Held")
     }
 }
