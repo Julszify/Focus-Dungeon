@@ -14,6 +14,8 @@ final class GameStore {
     private(set) var run: DungeonRun?
     /// Set when a session ends; cleared once the user has read it.
     private(set) var report: AdventureReport?
+    /// Every finished session, for the hero's chronicle.
+    private(set) var history: [SessionRecord] = []
 
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
     @ObservationIgnored private var lockObserver: NSObjectProtocol?
@@ -24,6 +26,7 @@ final class GameStore {
         var session: FocusSession?
         /// Kept until read, so it survives the app being closed right after a session.
         var report: AdventureReport?
+        var history: [SessionRecord]?
     }
 
     private static let saveURL = URL.applicationSupportDirectory.appending(path: "savegame.json")
@@ -34,6 +37,7 @@ final class GameStore {
         hero = save?.hero ?? Hero(name: "Ari")
         session = save?.session
         report = save?.report
+        history = save?.history ?? []
         if let session {
             run = Adventure.run(for: session, hero: hero)
         } else {
@@ -92,6 +96,7 @@ final class GameStore {
         guard let current = session else { return }
         let report = Adventure.finish(current, hero: &hero, at: now)
         self.report = report
+        history.append(SessionRecord(report: report, date: current.startDate))
         liveActivity.end(with: report)
         session = nil
         run = nil
@@ -201,7 +206,7 @@ final class GameStore {
     private func save() {
         do {
             try FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(SaveGame(hero: hero, session: session, report: report)).write(to: Self.saveURL, options: .atomic)
+            try JSONEncoder().encode(SaveGame(hero: hero, session: session, report: report, history: history)).write(to: Self.saveURL, options: .atomic)
         } catch {
             print("Spielstand konnte nicht gespeichert werden: \(error)")
         }

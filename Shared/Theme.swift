@@ -27,6 +27,23 @@ extension Rarity {
     }
 }
 
+extension FocusCategory {
+    /// Validated as a set on the dark panel (all pairs, since they stack): dark-mode slots
+    /// blue, yellow, magenta, green. Yellow–green only reaches the CVD floor, so categories
+    /// always also show their emoji and name, and are stacked so those two never touch.
+    var color: Color {
+        switch self {
+        case .learning: Color(red: 0x39 / 255, green: 0x87 / 255, blue: 0xe5 / 255)
+        case .work: Color(red: 0xc9 / 255, green: 0x85 / 255, blue: 0x00 / 255)
+        case .creative: Color(red: 0xd5 / 255, green: 0x51 / 255, blue: 0x81 / 255)
+        case .sport: Color(red: 0x00 / 255, green: 0x83 / 255, blue: 0x00 / 255)
+        }
+    }
+
+    /// Stacking and legend order.
+    static let chartOrder: [FocusCategory] = [.learning, .work, .creative, .sport]
+}
+
 extension HeroClass {
     var color: Color {
         switch self {

@@ -32,50 +32,23 @@ struct PixelHero: View {
         }
     }
 
-    private func color(for pixel: Character) -> Color? {
-        switch pixel {
-        case "H": heroClass.color
-        case "S", "A": Color(red: 0.96, green: 0.78, blue: 0.62)
-        case "E": Color(red: 0.12, green: 0.1, blue: 0.15)
-        case "B": heroClass.color.mix(with: .white, by: 0.15)
-        case "b": heroClass.color.mix(with: .black, by: 0.35)
-        case "L": Color(red: 0.35, green: 0.25, blue: 0.2)
-        case "F": Color(red: 0.2, green: 0.14, blue: 0.12)
-        case "W": weaponColor
-        default: nil
-        }
+    private var palette: [Character: Color] {
+        let skin = Color(red: 0.96, green: 0.78, blue: 0.62)
+        return [
+            "H": heroClass.color,
+            "S": skin, "A": skin,
+            "E": Color(red: 0.12, green: 0.1, blue: 0.15),
+            "B": heroClass.color.mix(with: .white, by: 0.15),
+            "b": heroClass.color.mix(with: .black, by: 0.35),
+            "L": Color(red: 0.35, green: 0.25, blue: 0.2),
+            "F": Color(red: 0.2, green: 0.14, blue: 0.12),
+            "W": weaponColor,
+        ]
     }
 
-    // One shape per palette color: plain shapes render in widgets and Live Activities, Canvas does not.
     var body: some View {
-        ZStack {
-            ForEach(Array("HSAEBbLFW"), id: \.self) { pixel in
-                if let color = color(for: pixel) {
-                    PixelLayer(grid: Self.grid, pixel: pixel).fill(color)
-                }
-            }
-        }
-        .frame(width: CGFloat(Self.grid[0].count) * pixelSize, height: CGFloat(Self.grid.count) * pixelSize)
-        .accessibilityLabel("Pixel-Held")
-    }
-}
-
-/// All cells of one palette character, scaled to whatever frame the shape gets.
-private nonisolated struct PixelLayer: Shape {
-    let grid: [String]
-    let pixel: Character
-
-    func path(in rect: CGRect) -> Path {
-        let rows = grid.map(Array.init)
-        let size = CGSize(width: rect.width / CGFloat(rows[0].count), height: rect.height / CGFloat(rows.count))
-        var path = Path()
-        for (y, row) in rows.enumerated() {
-            for (x, cell) in row.enumerated() where cell == pixel {
-                path.addRect(CGRect(x: rect.minX + CGFloat(x) * size.width, y: rect.minY + CGFloat(y) * size.height,
-                                    width: size.width, height: size.height))
-            }
-        }
-        return path
+        PixelSprite(grid: Self.grid, palette: palette, pixelSize: pixelSize)
+            .accessibilityLabel("Pixel-Held")
     }
 }
 

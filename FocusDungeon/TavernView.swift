@@ -28,6 +28,7 @@ struct TavernView: View {
                     heroCard
                     statsCard
                     descentCard
+                    chronicleLink
                 }
                 .padding()
             }
@@ -166,13 +167,31 @@ struct TavernView: View {
                 Text("Nach \(boss.minutes) Minuten Fokus stehst du vor dem Boss. Besiegst du ihn, startet deine nächste Session tiefer.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if hero.totalFocusMinutes > 0 {
-                    Text("Gesamte Fokuszeit: \(formatMinutes(hero.totalFocusMinutes))")
-                        .font(.caption.weight(.semibold))
-                        .padding(.top, 4)
+            }
+        }
+    }
+}
+
+extension TavernView {
+    private var chronicleLink: some View {
+        let streak = Chronicle(records: store.history).currentStreak()
+        return NavigationLink {
+            ChronicleView()
+        } label: {
+            Panel {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("📜 Heldenchronik").font(Theme.title(16))
+                        Text("Fokuszeit gesamt: \(formatMinutes(hero.totalFocusMinutes))\(streak > 0 ? " · 🔥 \(streak)" : "")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
                 }
             }
         }
+        .buttonStyle(.plain)
     }
 }
 

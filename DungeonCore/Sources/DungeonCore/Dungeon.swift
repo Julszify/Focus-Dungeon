@@ -16,6 +16,27 @@ public struct DungeonEvent: Codable, Hashable, Sendable, Identifiable {
     public let xp: Int
     public let item: Item?
     public let potionsUsed: Int
+    /// The monster fought in this room, for drawing it.
+    public let monster: String?
+}
+
+extension DungeonEvent {
+    // Saved reports from earlier versions lack the newer fields.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(Int.self, forKey: .id)
+        minute = try container.decode(Int.self, forKey: .minute)
+        floor = try container.decode(Int.self, forKey: .floor)
+        kind = try container.decode(DungeonEventKind.self, forKey: .kind)
+        text = try container.decode(String.self, forKey: .text)
+        hpAfter = try container.decode(Int.self, forKey: .hpAfter)
+        maxHP = try container.decode(Int.self, forKey: .maxHP)
+        gold = try container.decode(Int.self, forKey: .gold)
+        xp = try container.decode(Int.self, forKey: .xp)
+        item = try container.decodeIfPresent(Item.self, forKey: .item)
+        potionsUsed = try container.decodeIfPresent(Int.self, forKey: .potionsUsed) ?? 0
+        monster = try container.decodeIfPresent(String.self, forKey: .monster)
+    }
 }
 
 public struct DungeonRun: Codable, Sendable {
@@ -59,6 +80,10 @@ enum Bestiary {
         )
     }
 
+    static func isBoss(named name: String) -> Bool {
+        bosses.contains(name) || name.hasPrefix("Uralter Schatten")
+    }
+
     static func bossName(floor: Int) -> String {
         let number = floor / DungeonSimulator.floorsPerBoss
         return number <= bosses.count ? bosses[number - 1] : "Uralter Schatten Nr. \(number - bosses.count)"
@@ -73,6 +98,10 @@ enum Bestiary {
 public enum DungeonSimulator {
     public static let roomsPerFloor = 5
     public static let floorsPerBoss = 5
+
+    public static func isBoss(named name: String) -> Bool {
+        Bestiary.isBoss(named: name)
+    }
 
     public static func isBossFloor(_ floor: Int) -> Bool {
         floor % floorsPerBoss == 0
@@ -100,11 +129,11 @@ public enum DungeonSimulator {
         var events: [DungeonEvent] = []
 
         func log(_ minute: Int, _ floor: Int, _ kind: DungeonEventKind, _ text: String,
-                 gold: Int = 0, xp: Int = 0, item: Item? = nil, potionsUsed: Int = 0) {
+                 gold: Int = 0, xp: Int = 0, item: Item? = nil, potionsUsed: Int = 0, monster: String? = nil) {
             runGold += gold
             events.append(DungeonEvent(id: events.count, minute: minute, floor: floor, kind: kind, text: text,
                                        hpAfter: hp, maxHP: hero.maxHP, gold: gold, xp: xp, item: item,
-                                       potionsUsed: potionsUsed))
+                                       potionsUsed: potionsUsed, monster: monster))
         }
 
         func scaledGold(_ base: Int) -> Int {
@@ -137,7 +166,7 @@ public enum DungeonSimulator {
                 hp = hero.maxHP / 2
                 log(minute, floor, .knockout,
                     "\(monster.name) hat deinen Helden umgehauen!\(potionText) Nach einer Rast am Lagerfeuer geht es weiter, aber \(lost) Gold sind weg.",
-                    gold: -lost, potionsUsed: potionsUsed)
+                    gold: -lost, potionsUsed: potionsUsed, monster: monster.name)
                 return
             }
 
@@ -159,7 +188,7 @@ public enum DungeonSimulator {
                 text += " Beute: \(loot.name) (\(loot.rarity.displayName))."
             }
             log(minute, floor, isBoss ? .bossFight : .fight, text, gold: scaledGold(monster.gold), xp: monster.xp,
-                item: item, potionsUsed: potionsUsed)
+                item: item, potionsUsed: potionsUsed, monster: monster.name)
         }
 
         guard minutes > 0 else { return DungeonRun(plannedMinutes: minutes, events: []) }

@@ -52,14 +52,8 @@ struct DungeonView: View {
         VStack(spacing: 20) {
             header(session: session, floor: floor, now: now)
 
-            ZStack {
-                Torchlight(now: now)
-                PixelHero(heroClass: hero.heroClass, pixelSize: 9)
-                    // Steps along one pixel per second.
-                    .offset(y: elapsed.isMultiple(of: 2) ? 0 : -4)
-                    .animation(.easeInOut(duration: 0.25), value: elapsed)
-            }
-            .frame(height: 240)
+            RoomStage(heroClass: hero.heroClass, event: latest, elapsed: elapsed, now: now)
+                .frame(height: 240)
 
             VStack(spacing: 6) {
                 HStack {
@@ -118,6 +112,67 @@ struct DungeonView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(.spring(duration: 0.4), value: events.count)
+    }
+}
+
+/// The hero on the left and whatever the current room holds on the right. Each new room
+/// plays out once: the monster jumps in, then falls over (or the hero does, on a knockout).
+private struct RoomStage: View {
+    let heroClass: HeroClass
+    let event: DungeonEvent?
+    let elapsed: Int
+    let now: Date
+    @State private var settledEventID: Int?
+
+    private var settled: Bool { event != nil && settledEventID == event?.id }
+    private var heroKnockedOut: Bool { settled && event?.kind == .knockout }
+    private var monsterDefeated: Bool { settled && (event?.kind == .fight || event?.kind == .bossFight) }
+
+    var body: some View {
+        ZStack {
+            Torchlight(now: now)
+            HStack(alignment: .bottom, spacing: 28) {
+                PixelHero(heroClass: heroClass, pixelSize: 8)
+                    // Steps along one pixel per second.
+                    .offset(y: elapsed.isMultiple(of: 2) || heroKnockedOut ? 0 : -4)
+                    .animation(.easeInOut(duration: 0.25), value: elapsed)
+                    .rotationEffect(.degrees(heroKnockedOut ? -90 : 0), anchor: .bottom)
+                    .opacity(heroKnockedOut ? 0.6 : 1)
+                    .overlay(alignment: .top) {
+                        if heroKnockedOut { Text("💫").font(.title).offset(y: -20) }
+                    }
+                encounter
+            }
+        }
+        .animation(.spring(duration: 0.45, bounce: 0.35), value: event?.id)
+        .animation(.spring(duration: 0.5), value: settled)
+        .task(id: event?.id) {
+            settledEventID = nil
+            try? await Task.sleep(for: .seconds(1.2))
+            settledEventID = event?.id
+        }
+    }
+
+    @ViewBuilder
+    private var encounter: some View {
+        if let event, event.kind != .descend {
+            Group {
+                if let monster = event.monster {
+                    PixelMonster(name: monster, pixelSize: 8)
+                        .rotationEffect(.degrees(monsterDefeated ? 90 : 0), anchor: .bottom)
+                        .opacity(monsterDefeated ? 0.35 : 1)
+                        .overlay(alignment: .top) {
+                            if monsterDefeated { Text("💥").font(.title).offset(y: -24) }
+                        }
+                } else {
+                    Text(event.kind.icon)
+                        .font(.system(size: 60))
+                        .scaleEffect(settled ? 1 : 1.2)
+                }
+            }
+            .id(event.id)
+            .transition(.scale(scale: 0.4).combined(with: .opacity))
+        }
     }
 }
 

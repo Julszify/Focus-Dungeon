@@ -273,6 +273,21 @@ struct CompatibilityTests {
         #expect(hero.armor == nil)
     }
 
+    @Test func eventFromAnOlderReportStillLoads() throws {
+        let json = #"{"id":0,"minute":1,"floor":1,"kind":"fight","text":"Ratte besiegt.","hpAfter":20,"maxHP":31,"gold":3,"xp":12}"#
+        let event = try JSONDecoder().decode(DungeonEvent.self, from: Data(json.utf8))
+        #expect(event.monster == nil)
+        #expect(event.potionsUsed == 0)
+    }
+
+    @Test func fightsRememberTheirMonster() {
+        let run = DungeonSimulator.simulate(hero: Hero(name: "Test"), minutes: 25, seed: 42)
+        let fights = run.events.filter { [.fight, .bossFight, .knockout].contains($0.kind) }
+        #expect(!fights.isEmpty)
+        #expect(fights.allSatisfy { $0.monster != nil })
+        #expect(run.events.filter { $0.kind == .treasure }.allSatisfy { $0.monster == nil })
+    }
+
     @Test func roundTripKeepsNewFields() throws {
         var hero = Hero(name: "Test")
         hero.gold = 1_000
@@ -282,5 +297,67 @@ struct CompatibilityTests {
         let copy = try JSONDecoder().decode(Hero.self, from: JSONEncoder().encode(hero))
         #expect(copy.potions == 1)
         #expect(copy.weapon?.upgrades == 1)
+    }
+}
+
+@Suite("Chronicle")
+struct ChronicleTests {
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+
+    /// Noon on day `n` after the reference date, in UTC.
+    private func day(_ n: Int, hour: Int = 12) -> Date {
+        Date(timeIntervalSince1970: TimeInterval(n * 86_400 + hour * 3_600))
+    }
+
+    private func record(day n: Int, minutes: Int, category: FocusCategory = .work, completed: Bool = true,
+                        floor: Int = 1, bosses: Int = 0) -> SessionRecord {
+        let report = AdventureReport(outcome: completed ? .completed : .fled, category: category,
+                                     plannedMinutes: minutes, focusedMinutes: minutes, events: [],
+                                     floorReached: floor, monstersDefeated: 0, bossesDefeated: bosses,
+                                     gold: 0, xp: 0, items: [], levelsGained: 0, statGain: 0, potionsUsed: 0)
+        return SessionRecord(report: report, date: day(n))
+    }
+
+    @Test func totalsAndRecords() {
+        let chronicle = Chronicle(records: [
+            record(day: 0, minutes: 25, floor: 5, bosses: 1),
+            record(day: 1, minutes: 45, category: .learning, floor: 9),
+            record(day: 1, minutes: 7, completed: false),
+        ], calendar: calendar)
+        #expect(chronicle.totalMinutes == 77)
+        #expect(chronicle.completedCount == 2)
+        #expect(chronicle.fledCount == 1)
+        #expect(chronicle.bossesDefeated == 1)
+        #expect(chronicle.deepestFloor == 9)
+        #expect(chronicle.longestSession?.focusedMinutes == 45)
+        #expect(chronicle.minutes(in: .work) == 32)
+    }
+
+    @Test func dailyCoversEveryDayAndCategory() {
+        let chronicle = Chronicle(records: [record(day: 5, minutes: 25), record(day: 5, minutes: 15, category: .sport)],
+                                  calendar: calendar)
+        let daily = chronicle.daily(days: 7, endingOn: day(6))
+        #expect(daily.count == 7 * FocusCategory.allCases.count)
+        #expect(daily.filter { $0.minutes > 0 }.count == 2)
+        #expect(daily.first?.day == calendar.startOfDay(for: day(0)))
+    }
+
+    @Test func streakCountsConsecutiveDaysAndForgivesAnOpenToday() {
+        let chronicle = Chronicle(records: [
+            record(day: 1, minutes: 25),
+            record(day: 2, minutes: 25),
+            record(day: 3, minutes: 5),   // Too short to count.
+            record(day: 3, minutes: 6),   // Together with the one above it does.
+            record(day: 5, minutes: 25),
+        ], calendar: calendar)
+        #expect(chronicle.currentStreak(today: day(5)) == 1)
+        #expect(chronicle.currentStreak(today: day(6)) == 1)  // Nothing yet today: still alive.
+        #expect(chronicle.currentStreak(today: day(7)) == 0)
+        #expect(chronicle.currentStreak(today: day(3, hour: 20)) == 3)
+        #expect(chronicle.longestStreak == 3)
     }
 }
