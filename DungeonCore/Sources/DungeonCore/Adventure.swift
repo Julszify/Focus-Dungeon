@@ -18,6 +18,7 @@ public struct AdventureReport: Codable, Sendable {
     public let items: [Item]
     public let levelsGained: Int
     public let statGain: Int
+    public let potionsUsed: Int
 
     public var stat: StatKind { category.stat }
 }
@@ -46,11 +47,14 @@ public enum Adventure {
         let gold = completed ? earnedGold : max(0, earnedGold) / 2
         let items = completed ? events.compactMap(\.item) : []
         let statGain = completed ? max(1, minutes / 10) : minutes / 20
+        // Drunk potions are gone either way.
+        let potionsUsed = events.reduce(0) { $0 + $1.potionsUsed }
 
         let levelsGained = hero.gainXP(xp)
         hero.gold += gold
         hero.stats[session.category.stat] += statGain
         hero.totalFocusMinutes += minutes
+        hero.potions = max(0, hero.potions - potionsUsed)
         items.forEach { hero.receive($0) }
         if let deepestBoss = events.last(where: { $0.kind == .bossFight })?.floor {
             hero.checkpointFloor = max(hero.checkpointFloor, deepestBoss + 1)
@@ -69,7 +73,8 @@ public enum Adventure {
             xp: xp,
             items: items,
             levelsGained: levelsGained,
-            statGain: statGain
+            statGain: statGain,
+            potionsUsed: potionsUsed
         )
     }
 }

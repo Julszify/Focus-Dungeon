@@ -34,7 +34,12 @@ struct TavernView: View {
             .background(Theme.background)
             .navigationTitle("Taverne")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    NavigationLink {
+                        MarketView()
+                    } label: {
+                        Label("Markt", systemImage: "storefront.fill")
+                    }
                     NavigationLink {
                         InventoryView()
                     } label: {
@@ -102,9 +107,14 @@ struct TavernView: View {
                     Text("\(hero.xp) / \(Hero.xpNeeded(forLevel: hero.level)) XP")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
-                    Text("🪙 \(hero.gold) Gold")
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(Theme.gold)
+                    HStack(spacing: 12) {
+                        Text("🪙 \(hero.gold) Gold")
+                            .foregroundStyle(Theme.gold)
+                        if hero.potions > 0 {
+                            Text("🧪 \(hero.potions)")
+                        }
+                    }
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
                 }
             }
         }

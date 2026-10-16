@@ -163,3 +163,124 @@ struct HeroTests {
         #expect(Hero(name: "T", stats: Stats(intelligence: 5)).heroClass == .mage)
     }
 }
+
+@Suite("Market")
+struct MarketTests {
+    private func richHero() -> Hero {
+        var hero = Hero(name: "Test")
+        hero.gold = 10_000
+        return hero
+    }
+
+    @Test func buyingPotionsCostsGoldAndStopsAtTheLimit() throws {
+        var hero = richHero()
+        let price = Market.potionPrice(for: hero)
+        try hero.buyPotion()
+        #expect(hero.potions == 1)
+        #expect(hero.gold == 10_000 - price)
+        for _ in 1..<Market.maxPotions { try hero.buyPotion() }
+        #expect(throws: MarketError.potionsFull) { try hero.buyPotion() }
+    }
+
+    @Test func notEnoughGoldChangesNothing() {
+        var hero = Hero(name: "Test")
+        #expect(throws: MarketError.notEnoughGold) { try hero.buyPotion() }
+        #expect(hero.potions == 0)
+        #expect(hero.gold == 0)
+    }
+
+    @Test func upgradingAnEquippedItemRaisesItsPower() throws {
+        var hero = richHero()
+        let sword = Item(name: "Schwert", slot: .weapon, rarity: .rare, power: 5)
+        hero.receive(sword)
+        let attackBefore = hero.attack
+        let upgraded = try hero.upgrade(itemID: sword.id)
+        #expect(upgraded.upgrades == 1)
+        #expect(upgraded.displayName == "Schwert +1")
+        #expect(hero.weapon == upgraded)
+        #expect(hero.attack == attackBefore + Market.upgradeGain(for: sword))
+    }
+
+    @Test func upgradesStopAtTheMaximum() throws {
+        var hero = richHero()
+        hero.gold = 10_000_000
+        let ring = Item(name: "Ring", slot: .trinket, rarity: .common, power: 1)
+        hero.receive(ring)
+        for _ in 0..<Market.maxUpgrades { try hero.upgrade(itemID: ring.id) }
+        #expect(throws: MarketError.fullyUpgraded) { try hero.upgrade(itemID: ring.id) }
+    }
+
+    @Test func sellingOnlyWorksFromTheBackpack() throws {
+        var hero = Hero(name: "Test")
+        let good = Item(name: "Gut", slot: .armor, rarity: .epic, power: 9)
+        let old = Item(name: "Alt", slot: .armor, rarity: .common, power: 1)
+        hero.receive(good)
+        hero.receive(old)  // Worse, so it stays in the backpack.
+        #expect(throws: MarketError.itemNotFound) { try hero.sell(itemID: good.id) }
+        let value = try hero.sell(itemID: old.id)
+        #expect(value == Market.sellValue(of: old))
+        #expect(hero.gold == value)
+        #expect(hero.inventory.isEmpty)
+    }
+
+    @Test func chestLootLandsWithTheHero() throws {
+        var hero = richHero()
+        let item = try hero.buyChest(seed: 7)
+        #expect(hero.item(withID: item.id) != nil)
+    }
+}
+
+@Suite("Potions")
+struct PotionTests {
+    /// A weak hero deep in the dungeon, where knockouts are certain.
+    private func doomedHero(potions: Int) -> Hero {
+        var hero = Hero(name: "Test")
+        hero.checkpointFloor = 30
+        hero.potions = potions
+        return hero
+    }
+
+    @Test func potionsAreDrunkInsteadOfGoingDown() {
+        let run = DungeonSimulator.simulate(hero: doomedHero(potions: 2), minutes: 10, seed: 3)
+        #expect(run.events.reduce(0) { $0 + $1.potionsUsed } == 2)
+    }
+
+    @Test func finishingUsesUpThePotions() {
+        var hero = doomedHero(potions: 2)
+        var session = FocusSession(category: .sport, plannedMinutes: 10, startDate: start, seed: 3)
+        session.update(at: minutes(10))
+        let report = Adventure.finish(session, hero: &hero, at: minutes(10))
+        #expect(report.potionsUsed == 2)
+        #expect(hero.potions == 0)
+    }
+}
+
+@Suite("Save game compatibility")
+struct CompatibilityTests {
+    @Test func heroFromTheFirstVersionStillLoads() throws {
+        // A hero as saved before potions and forge upgrades existed.
+        let json = """
+        {"name":"Ari","level":3,"xp":40,"gold":250,"totalFocusMinutes":75,"checkpointFloor":6,
+         "stats":{"intelligence":4,"dexterity":2,"strength":1,"charisma":1},
+         "inventory":[{"id":"6E1A1F4C-0000-4000-8000-000000000001","name":"Kettenhemd","slot":"armor","rarity":1,"power":4}],
+         "weapon":{"id":"6E1A1F4C-0000-4000-8000-000000000002","name":"Eichenstab","slot":"weapon","rarity":2,"power":6}}
+        """
+        let hero = try JSONDecoder().decode(Hero.self, from: Data(json.utf8))
+        #expect(hero.level == 3)
+        #expect(hero.potions == 0)
+        #expect(hero.weapon?.upgrades == 0)
+        #expect(hero.inventory.first?.name == "Kettenhemd")
+        #expect(hero.armor == nil)
+    }
+
+    @Test func roundTripKeepsNewFields() throws {
+        var hero = Hero(name: "Test")
+        hero.gold = 1_000
+        hero.receive(Item(name: "Dolch", slot: .weapon, rarity: .uncommon, power: 3))
+        try hero.buyPotion()
+        try hero.upgrade(itemID: hero.weapon!.id)
+        let copy = try JSONDecoder().decode(Hero.self, from: JSONEncoder().encode(hero))
+        #expect(copy.potions == 1)
+        #expect(copy.weapon?.upgrades == 1)
+    }
+}

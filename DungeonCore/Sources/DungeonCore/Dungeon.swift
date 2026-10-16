@@ -15,6 +15,7 @@ public struct DungeonEvent: Codable, Hashable, Sendable, Identifiable {
     public let gold: Int
     public let xp: Int
     public let item: Item?
+    public let potionsUsed: Int
 }
 
 public struct DungeonRun: Codable, Sendable {
@@ -99,10 +100,11 @@ public enum DungeonSimulator {
         var events: [DungeonEvent] = []
 
         func log(_ minute: Int, _ floor: Int, _ kind: DungeonEventKind, _ text: String,
-                 gold: Int = 0, xp: Int = 0, item: Item? = nil) {
+                 gold: Int = 0, xp: Int = 0, item: Item? = nil, potionsUsed: Int = 0) {
             runGold += gold
             events.append(DungeonEvent(id: events.count, minute: minute, floor: floor, kind: kind, text: text,
-                                       hpAfter: hp, maxHP: hero.maxHP, gold: gold, xp: xp, item: item))
+                                       hpAfter: hp, maxHP: hero.maxHP, gold: gold, xp: xp, item: item,
+                                       potionsUsed: potionsUsed))
         }
 
         func scaledGold(_ base: Int) -> Int {
@@ -112,6 +114,7 @@ public enum DungeonSimulator {
         func fight(_ monster: Monster, minute: Int, floor: Int, isBoss: Bool) {
             var monsterHP = monster.hp
             var rounds = 0
+            var potionsUsed = 0
             while monsterHP > 0, hp > 0, rounds < 30 {
                 rounds += 1
                 var damage = max(1, hero.attack + Int.random(in: -1...1, using: &rng))
@@ -119,15 +122,22 @@ public enum DungeonSimulator {
                 monsterHP -= damage
                 if monsterHP <= 0 { break }
                 hp -= max(1, monster.attack - hero.defense + Int.random(in: -1...1, using: &rng))
+                // A potion is drunk automatically instead of going down.
+                if hp <= 0, hero.potions > 0 {
+                    hero.potions -= 1
+                    potionsUsed += 1
+                    hp = hero.maxHP
+                }
             }
+            let potionText = potionsUsed == 0 ? "" : " 🧪 Heiltrank getrunken\(potionsUsed > 1 ? " (×\(potionsUsed))" : "")!"
 
             // Running out of rounds means the hero is exhausted: same as being knocked out.
             if hp <= 0 || monsterHP > 0 {
                 let lost = runGold * 3 / 10
                 hp = hero.maxHP / 2
                 log(minute, floor, .knockout,
-                    "\(monster.name) hat deinen Helden umgehauen! Nach einer Rast am Lagerfeuer geht es weiter, aber \(lost) Gold sind weg.",
-                    gold: -lost)
+                    "\(monster.name) hat deinen Helden umgehauen!\(potionText) Nach einer Rast am Lagerfeuer geht es weiter, aber \(lost) Gold sind weg.",
+                    gold: -lost, potionsUsed: potionsUsed)
                 return
             }
 
@@ -135,6 +145,7 @@ public enum DungeonSimulator {
             var text = isBoss
                 ? "BOSS besiegt: \(monster.name)! \(rng.pick(Flavor.bossVictory))"
                 : "\(monster.name) besiegt. \(rng.pick(Flavor.victory))"
+            text += potionText
             if levels > 0 {
                 hp = hero.maxHP
                 text += " ⬆️ Stufe \(hero.level) erreicht!"
@@ -147,7 +158,8 @@ public enum DungeonSimulator {
                 item = loot
                 text += " Beute: \(loot.name) (\(loot.rarity.displayName))."
             }
-            log(minute, floor, isBoss ? .bossFight : .fight, text, gold: scaledGold(monster.gold), xp: monster.xp, item: item)
+            log(minute, floor, isBoss ? .bossFight : .fight, text, gold: scaledGold(monster.gold), xp: monster.xp,
+                item: item, potionsUsed: potionsUsed)
         }
 
         guard minutes > 0 else { return DungeonRun(plannedMinutes: minutes, events: []) }

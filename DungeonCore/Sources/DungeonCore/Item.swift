@@ -34,7 +34,10 @@ public struct Item: Codable, Hashable, Sendable, Identifiable {
     public let name: String
     public let slot: ItemSlot
     public let rarity: Rarity
-    public let power: Int
+    /// Includes the bonus from forge upgrades.
+    public internal(set) var power: Int
+    /// How often the forge has improved this item.
+    public internal(set) var upgrades: Int = 0
 
     public init(id: UUID = UUID(), name: String, slot: ItemSlot, rarity: Rarity, power: Int) {
         self.id = id
@@ -42,6 +45,22 @@ public struct Item: Codable, Hashable, Sendable, Identifiable {
         self.slot = slot
         self.rarity = rarity
         self.power = power
+    }
+
+    /// "Kettenhemd +2" once upgraded.
+    public var displayName: String {
+        upgrades > 0 ? "\(name) +\(upgrades)" : name
+    }
+
+    // Save games from before the forge have no `upgrades`.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        slot = try container.decode(ItemSlot.self, forKey: .slot)
+        rarity = try container.decode(Rarity.self, forKey: .rarity)
+        power = try container.decode(Int.self, forKey: .power)
+        upgrades = try container.decodeIfPresent(Int.self, forKey: .upgrades) ?? 0
     }
 }
 

@@ -22,15 +22,18 @@ final class GameStore {
     private struct SaveGame: Codable {
         var hero: Hero
         var session: FocusSession?
+        /// Kept until read, so it survives the app being closed right after a session.
+        var report: AdventureReport?
     }
 
     private static let saveURL = URL.applicationSupportDirectory.appending(path: "savegame.json")
     private static let endNotificationID = "session-end"
 
     init() {
-        let save = (try? Data(contentsOf: Self.saveURL)).flatMap { try? JSONDecoder().decode(SaveGame.self, from: $0) }
+        let save = Self.loadSaveGame()
         hero = save?.hero ?? Hero(name: "Ari")
         session = save?.session
+        report = save?.report
         if let session {
             run = Adventure.run(for: session, hero: hero)
         } else {
@@ -82,6 +85,7 @@ final class GameStore {
 
     func dismissReport() {
         report = nil
+        save()
     }
 
     private func finish(at now: Date) {
@@ -102,6 +106,21 @@ final class GameStore {
         guard !trimmed.isEmpty else { return }
         hero.name = String(trimmed.prefix(20))
         save()
+    }
+
+    /// Runs a market action (buy, upgrade, sell) on the hero and saves the result.
+    /// Like gear changes, trading is locked while a session runs.
+    @discardableResult
+    func trade<T>(_ action: (inout Hero) throws -> T) -> Result<T, MarketError> {
+        guard session == nil else { return .failure(.itemNotFound) }
+        do {
+            let value = try action(&hero)
+            save()
+            return .success(value)
+        } catch {
+            // Market actions only throw MarketError; closures just can't spell out the type.
+            return .failure(error as? MarketError ?? .itemNotFound)
+        }
     }
 
     /// Gear is locked during a session, since the run was simulated with the old gear.
@@ -165,10 +184,24 @@ final class GameStore {
 
     // MARK: Persistence & notifications
 
+    /// Reads the save game. If it exists but can't be read, it is copied aside first,
+    /// so starting over with a new hero never silently destroys the old one.
+    private static func loadSaveGame() -> SaveGame? {
+        guard let data = try? Data(contentsOf: saveURL) else { return nil }
+        do {
+            return try JSONDecoder().decode(SaveGame.self, from: data)
+        } catch {
+            let backup = URL.applicationSupportDirectory.appending(path: "savegame-unreadable-\(Int(Date.now.timeIntervalSince1970)).json")
+            try? data.write(to: backup)
+            print("Spielstand nicht lesbar, Kopie unter \(backup.lastPathComponent): \(error)")
+            return nil
+        }
+    }
+
     private func save() {
         do {
             try FileManager.default.createDirectory(at: .applicationSupportDirectory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(SaveGame(hero: hero, session: session)).write(to: Self.saveURL, options: .atomic)
+            try JSONEncoder().encode(SaveGame(hero: hero, session: session, report: report)).write(to: Self.saveURL, options: .atomic)
         } catch {
             print("Spielstand konnte nicht gespeichert werden: \(error)")
         }

@@ -11,10 +11,29 @@ public struct Hero: Codable, Sendable {
     public var totalFocusMinutes: Int = 0
     /// Sessions start here. Defeating a boss moves the checkpoint below its floor.
     public var checkpointFloor: Int = 1
+    /// Healing potions; one is drunk automatically instead of being knocked out.
+    public var potions: Int = 0
 
     public init(name: String, stats: Stats = Stats()) {
         self.name = name
         self.stats = stats
+    }
+
+    // Fields added after the first release are optional in the save game.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        level = try container.decode(Int.self, forKey: .level)
+        xp = try container.decode(Int.self, forKey: .xp)
+        gold = try container.decode(Int.self, forKey: .gold)
+        stats = try container.decode(Stats.self, forKey: .stats)
+        inventory = try container.decode([Item].self, forKey: .inventory)
+        weapon = try container.decodeIfPresent(Item.self, forKey: .weapon)
+        armor = try container.decodeIfPresent(Item.self, forKey: .armor)
+        trinket = try container.decodeIfPresent(Item.self, forKey: .trinket)
+        totalFocusMinutes = try container.decode(Int.self, forKey: .totalFocusMinutes)
+        checkpointFloor = try container.decode(Int.self, forKey: .checkpointFloor)
+        potions = try container.decodeIfPresent(Int.self, forKey: .potions) ?? 0
     }
 
     public var heroClass: HeroClass {

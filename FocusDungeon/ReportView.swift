@@ -75,6 +75,9 @@ struct ReportView: View {
                 if report.levelsGained > 0 {
                     row("⬆️", "Stufenaufstieg", "Stufe \(store.hero.level)!")
                 }
+                if report.potionsUsed > 0 {
+                    row("🧪", "Heiltränke getrunken", "\(report.potionsUsed)")
+                }
             }
         }
     }
@@ -134,7 +137,7 @@ struct ItemRow: View {
                 .background(item.rarity.color.opacity(0.15), in: .rect(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(item.rarity.color.opacity(0.6)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name).font(.headline).foregroundStyle(item.rarity.color)
+                Text(item.displayName).font(.headline).foregroundStyle(item.rarity.color)
                 Text("\(item.rarity.displayName) · \(item.slot.displayName)")
                     .font(.caption)
                     .foregroundStyle(.secondary)

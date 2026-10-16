@@ -33,11 +33,17 @@ struct InventoryView: View {
                         ItemRow(item: item)
                     }
                     .buttonStyle(.plain)
+                    .swipeActions {
+                        Button("Verkaufen\n\(Market.sellValue(of: item)) 🪙") {
+                            store.trade { try $0.sell(itemID: item.id) }
+                        }
+                        .tint(Theme.gold)
+                    }
                 }
             } header: {
                 Text("Rucksack (\(backpack.count))")
             } footer: {
-                Text("Tippe auf einen Gegenstand, um ihn anzulegen. Waffen erhöhen den Angriff, Rüstungen die Verteidigung und Leben, Talismane dein Glück bei Gold und Beute.")
+                Text("Tippe auf einen Gegenstand, um ihn anzulegen, oder wische nach links, um ihn zu verkaufen. Waffen erhöhen den Angriff, Rüstungen die Verteidigung und Leben, Talismane dein Glück bei Gold und Beute.")
             }
         }
         .scrollContentBackground(.hidden)
